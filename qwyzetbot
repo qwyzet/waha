@@ -20,53 +20,40 @@ def init_db():
                         name TEXT,
                         phone TEXT UNIQUE,
                         email TEXT,
-                        reg_date TEXT,
-                        language TEXT)''')
+                        reg_date TEXT)''')
     conn.commit()
     conn.close()
 
 init_db()
 
-# Функция для запроса выбора языка
-def language_keyboard():
-    markup = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    ru_button = KeyboardButton("🇷🇺 Русский")
-    uz_button = KeyboardButton("🇺🇿 O'zbek")
-    markup.add(ru_button, uz_button)
-    return markup
-
 # Функция для клавиатуры запроса номера телефона
-def request_phone_keyboard(language):
+def request_phone_keyboard():
     markup = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    phone_button = KeyboardButton("📱 Отправить номер" if language == "ru" else "📱 Raqamingizni yuboring", request_contact=True)
+    phone_button = KeyboardButton("📱 Отправить номер", request_contact=True)
     markup.add(phone_button)
     return markup
 
-# Функция для выбора имени
-def choose_name_keyboard(language):
+# Функция для выбора имени (пример с несколькими именами)
+def choose_name_keyboard():
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    names_ru = ["Иван", "Мария", "Алексей", "Екатерина", "🔄 Ввести вручную"]
-    names_uz = ["Ismoil", "Sarvinoz", "Alisher", "Zarina", "🔄 Qo'lda kiritish"]
-    names = names_ru if language == "ru" else names_uz
-    for i in range(0, len(names), 2):
-        markup.add(KeyboardButton(names[i]), KeyboardButton(names[i+1]) if i+1 < len(names) else None)
+    markup.add(KeyboardButton("Иван"), KeyboardButton("Мария"))
+    markup.add(KeyboardButton("Алексей"), KeyboardButton("Екатерина"))
+    markup.add(KeyboardButton("🔄 Ввести вручную"))
     return markup
 
 # Функция для запроса email
-def request_email_keyboard(language):
+def request_email_keyboard():
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    email_manual = "📧 Ввести email вручную" if language == "ru" else "📧 Emailni qo'lda kiritish"
-    skip = "⏭ Пропустить" if language == "ru" else "⏭ O'tkazib yuborish"
-    markup.add(KeyboardButton(email_manual), KeyboardButton(skip))
+    markup.add(KeyboardButton("📧 Ввести email вручную"), KeyboardButton("⏭ Пропустить"))
     return markup
 
 # Функция для главного меню
-def main_menu_keyboard(language):
+def main_menu_keyboard():
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    profile_btn = KeyboardButton("📋 Профиль" if language == "ru" else "📋 Profil")
-    set_phone_btn = KeyboardButton("📞 Изменить номер" if language == "ru" else "📞 Raqamni o'zgartirish")
-    set_email_btn = KeyboardButton("📧 Изменить Email" if language == "ru" else "📧 Emailni o'zgartirish")
-    help_btn = KeyboardButton("ℹ️ Помощь" if language == "ru" else "ℹ️ Yordam")
+    profile_btn = KeyboardButton("📋 Профиль")
+    set_phone_btn = KeyboardButton("📞 Изменить номер")
+    set_email_btn = KeyboardButton("📧 Изменить Email")
+    help_btn = KeyboardButton("ℹ️ Помощь")
     markup.add(profile_btn, set_phone_btn)
     markup.add(set_email_btn, help_btn)
     return markup
@@ -75,22 +62,10 @@ def main_menu_keyboard(language):
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.chat.id
-    bot.send_message(user_id, "🌍 Выберите язык / Tilni tanlang:", reply_markup=language_keyboard())
+    first_name = message.from_user.first_name
 
-# Обработчик выбора языка
-@bot.message_handler(func=lambda message: message.text in ["🇷🇺 Русский", "🇺🇿 O'zbek"])
-def set_language(message):
-    user_id = message.chat.id
-    language = "ru" if message.text == "🇷🇺 Русский" else "uz"
-
-    conn = sqlite3.connect("users.db")
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO users (user_id, language) VALUES (?, ?)", (user_id, language))
-    conn.commit()
-    conn.close()
-
-    bot.send_message(user_id, "📱 Отправьте ваш номер телефона:" if language == "ru" else "📱 Raqamingizni yuboring:",
-                     reply_markup=request_phone_keyboard(language))
+    bot.send_message(user_id, f"Привет, {first_name}! Давайте зарегистрируемся.\n📱 Отправьте свой номер телефона.",
+                     reply_markup=request_phone_keyboard())
 
 # Обработчик номера телефона
 @bot.message_handler(content_types=['contact'])
@@ -98,22 +73,18 @@ def get_phone(message):
     user_id = message.chat.id
     phone_number = message.contact.phone_number
 
+    # Сохраняем номер
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT language FROM users WHERE user_id = ?", (user_id,))
-    language = cursor.fetchone()[0] if cursor.fetchone() else "ru"
-
-    cursor.execute("UPDATE users SET phone=?, reg_date=? WHERE user_id=?",
-                   (phone_number, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_id))
+    cursor.execute("INSERT OR REPLACE INTO users (user_id, phone, reg_date) VALUES (?, ?, ?)",
+                   (user_id, phone_number, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
     conn.commit()
     conn.close()
 
-    bot.send_message(user_id, "✅ Номер сохранен! Теперь выберите имя:" if language == "ru" else
-                              "✅ Raqamingiz saqlandi! Endi ismingizni tanlang:",
-                     reply_markup=choose_name_keyboard(language))
+    bot.send_message(user_id, "✅ Номер сохранен! Теперь выберите имя:", reply_markup=choose_name_keyboard())
 
 # Обработчик выбора имени
-@bot.message_handler(func=lambda message: message.text in ["Чарос", "Ойбек", "Аброр", "Сардор", "Ismoil", "Sarvinoz", "Alisher", "Zarina"])
+@bot.message_handler(func=lambda message: message.text in ["Иван", "Мария", "Алексей", "Екатерина"])
 def choose_name(message):
     user_id = message.chat.id
     name = message.text
@@ -121,43 +92,91 @@ def choose_name(message):
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
     cursor.execute("UPDATE users SET name=? WHERE user_id=?", (name, user_id))
-    cursor.execute("SELECT language FROM users WHERE user_id = ?", (user_id,))
-    language = cursor.fetchone()[0] if cursor.fetchone() else "ru"
     conn.commit()
     conn.close()
 
-    bot.send_message(user_id, "✅ Имя сохранено! Теперь добавьте email (можно пропустить)." if language == "ru" else
-                              "✅ Ism saqlandi! Endi emailni kiriting (o'tkazib yuborish mumkin).",
-                     reply_markup=request_email_keyboard(language))
+    bot.send_message(user_id, f"✅ Имя {name} сохранено! Теперь добавьте email (можно пропустить).",
+                     reply_markup=request_email_keyboard())
+
+# Обработчик для ручного ввода имени
+@bot.message_handler(func=lambda message: message.text == "🔄 Ввести вручную")
+def manual_name_entry(message):
+    user_id = message.chat.id
+    bot.send_message(user_id, "Введите ваше имя вручную:")
+    bot.register_next_step_handler(message, process_manual_name)
+
+def process_manual_name(message):
+    user_id = message.chat.id
+    name = message.text
+
+    if len(name) > 1:
+        conn = sqlite3.connect("users.db")
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET name=? WHERE user_id=?", (name, user_id))
+        conn.commit()
+        conn.close()
+
+        bot.send_message(user_id, f"✅ Имя {name} сохранено! Теперь добавьте email (можно пропустить).",
+                         reply_markup=request_email_keyboard())
+    else:
+        bot.send_message(user_id, "❌ Имя слишком короткое. Попробуйте снова.")
 
 # Обработчик email
-@bot.message_handler(func=lambda message: message.text in ["📧 Ввести email вручную", "📧 Emailni qo'lda kiritish"])
+@bot.message_handler(func=lambda message: message.text == "📧 Ввести email вручную")
 def enter_email(message):
     user_id = message.chat.id
-    bot.send_message(user_id, "Введите ваш email:" if "Ввести" in message.text else "Emailingizni kiriting:")
+    bot.send_message(user_id, "Введите ваш email:")
     bot.register_next_step_handler(message, process_email)
 
-@bot.message_handler(func=lambda message: message.text in ["⏭ Пропустить", "⏭ O'tkazib yuborish"])
+@bot.message_handler(func=lambda message: message.text == "⏭ Пропустить")
 def skip_email(message):
     user_id = message.chat.id
-    bot.send_message(user_id, "✅ Регистрация завершена! Добро пожаловать!" if "Пропустить" in message.text else
-                              "✅ Ro'yxatdan o'tish tugadi! Xush kelibsiz!",
-                     reply_markup=main_menu_keyboard("ru"))
+    bot.send_message(user_id, "✅ Регистрация завершена! Добро пожаловать!", reply_markup=main_menu_keyboard())
 
 def process_email(message):
     user_id = message.chat.id
     email = message.text
+
     if "@" in email and "." in email:
         conn = sqlite3.connect("users.db")
         cursor = conn.cursor()
         cursor.execute("UPDATE users SET email=? WHERE user_id=?", (email, user_id))
         conn.commit()
         conn.close()
-        bot.send_message(user_id, "✅ Email сохранен!" if "@" in email else "✅ Email saqlandi!",
-                         reply_markup=main_menu_keyboard("ru"))
+
+        bot.send_message(user_id, f"✅ Email {email} сохранен! Регистрация завершена.", reply_markup=main_menu_keyboard())
     else:
-        bot.send_message(user_id, "❌ Некорректный email." if "@" in email else "❌ Email noto'g'ri.")
+        bot.send_message(user_id, "❌ Некорректный email. Попробуйте снова.")
+
+# Команда /profile
+@bot.message_handler(func=lambda message: message.text == "📋 Профиль")
+def profile(message):
+    user_id = message.chat.id
+
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT name, phone, email, reg_date FROM users WHERE user_id = ?", (user_id,))
+    user_data = cursor.fetchone()
+    conn.close()
+
+    if user_data:
+        name, phone, email, reg_date = user_data
+        email_text = email if email else "Не указан"
+
+        bot.send_message(user_id, f"📌 Ваш профиль:\n👤 Имя: {name}\n📞 Телефон: {phone}\n📧 Email: {email_text}\n📅 Дата регистрации: {reg_date}")
+    else:
+        bot.send_message(user_id, "❌ Вы не зарегистрированы!")
+
+# Команда /help
+@bot.message_handler(func=lambda message: message.text == "ℹ️ Помощь")
+def help_command(message):
+    bot.send_message(message.chat.id, "📌 Доступные команды:\n"
+                                      "📋 Профиль - посмотреть ваши данные\n"
+                                      "📞 Изменить номер - обновить номер телефона\n"
+                                      "📧 Изменить Email - обновить email\n"
+                                      "ℹ️ Помощь - список команд")
 
 bot.polling(none_stop=True)
+
 
 
