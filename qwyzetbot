@@ -1,0 +1,205 @@
+import telebot
+import sqlite3
+import datetime
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton
+
+# Ваш токен бота
+TOKEN = "7343567081:AAGwV9j1iw49hDoDJHvqfuZecwVNy2pqVoY"
+bot = telebot.TeleBot(TOKEN)
+
+# ID админа (укажите свой Telegram ID)
+ADMIN_ID = 123456789  # Замените на свой Telegram ID
+
+# Подключение к базе данных и создание таблицы
+def init_db():
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    cursor.execute('''CREATE TABLE IF NOT EXISTS users (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER UNIQUE,
+                        name TEXT,
+                        phone TEXT UNIQUE,
+                        email TEXT,
+                        reg_date TEXT)''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# Функция для получения данных пользователя
+def get_user_data(user_id):
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT name, phone, email, reg_date FROM users WHERE user_id = ?", (user_id,))
+    user = cursor.fetchone()
+    conn.close()
+    return user
+
+# Функция для сохранения пользователя
+def save_user(user_id, name, phone):
+    reg_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO users (user_id, name, phone, reg_date) VALUES (?, ?, ?, ?)",
+                   (user_id, name, phone, reg_date))
+    conn.commit()
+    conn.close()
+
+# Функция для обновления номера телефона
+def update_phone(user_id, phone):
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET phone = ? WHERE user_id = ?", (phone, user_id))
+    conn.commit()
+    conn.close()
+
+# Функция для обновления email
+def update_email(user_id, email):
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET email = ? WHERE user_id = ?", (email, user_id))
+    conn.commit()
+    conn.close()
+
+# Функция для обновления имени
+def update_name(user_id, name):
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET name = ? WHERE user_id = ?", (name, user_id))
+    conn.commit()
+    conn.close()
+
+# Функция для запроса номера телефона
+def request_phone_keyboard():
+    markup = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    phone_button = KeyboardButton("📱 Отправить номер", request_contact=True)
+    markup.add(phone_button)
+    return markup
+
+# Команда /start
+@bot.message_handler(commands=['start'])
+def start(message):
+    user_id = message.chat.id
+    first_name = message.from_user.first_name
+
+    if get_user_data(user_id):
+        bot.send_message(user_id, f"С возвращением, {first_name}! Вы уже зарегистрированы.")
+    else:
+        bot.send_message(user_id, f"Привет, {first_name}! Пожалуйста, зарегистрируйтесь, отправив свой номер телефона.",
+                         reply_markup=request_phone_keyboard())
+
+# Обработчик номера телефона
+@bot.message_handler(content_types=['contact'])
+def get_phone(message):
+    user_id = message.chat.id
+    first_name = message.from_user.first_name
+
+    if message.contact and message.contact.phone_number:
+        phone_number = message.contact.phone_number
+
+        if get_user_data(user_id):
+            bot.send_message(user_id, "Вы уже зарегистрированы. Используйте команду /set_phone для обновления номера.")
+        else:
+            save_user(user_id, first_name, phone_number)
+            bot.send_message(user_id, f"Спасибо, {first_name}! Ваш номер {phone_number} сохранен.")
+
+# Команда /profile – просмотр данных пользователя
+@bot.message_handler(commands=['profile'])
+def profile(message):
+    user_id = message.chat.id
+    user_data = get_user_data(user_id)
+
+    if user_data:
+        name, phone, email, reg_date = user_data
+        email_text = email if email else "Не указан"
+        bot.send_message(user_id, f"📌 Ваш профиль:\n👤 Имя: {name}\n🆔 ID: {user_id}\n📞 Телефон: {phone}\n📧 Email: {email_text}\n📅 Дата регистрации: {reg_date}")
+    else:
+        bot.send_message(user_id, "Вы не зарегистрированы. Пожалуйста, отправьте свой номер телефона.")
+
+# Команда /set_phone – изменение номера телефона
+@bot.message_handler(commands=['set_phone'])
+def set_phone(message):
+    user_id = message.chat.id
+
+    if get_user_data(user_id):
+        bot.send_message(user_id, "Отправьте новый номер телефона с кнопкой ниже.", reply_markup=request_phone_keyboard())
+    else:
+        bot.send_message(user_id, "Вы не зарегистрированы. Пожалуйста, отправьте свой номер телефона.")
+
+# Команда /set_email – изменение email
+@bot.message_handler(commands=['set_email'])
+def set_email(message):
+    user_id = message.chat.id
+
+    if get_user_data(user_id):
+        bot.send_message(user_id, "Введите ваш новый email:")
+        bot.register_next_step_handler(message, process_email)
+    else:
+        bot.send_message(user_id, "Вы не зарегистрированы.")
+
+def process_email(message):
+    user_id = message.chat.id
+    email = message.text
+
+    if "@" in email and "." in email:
+        update_email(user_id, email)
+        bot.send_message(user_id, f"✅ Ваш email ({email}) обновлен.")
+    else:
+        bot.send_message(user_id, "❌ Некорректный email. Попробуйте снова.")
+
+# Команда /set_name – изменение имени
+@bot.message_handler(commands=['set_name'])
+def set_name(message):
+    user_id = message.chat.id
+
+    if get_user_data(user_id):
+        bot.send_message(user_id, "Введите ваше новое имя:")
+        bot.register_next_step_handler(message, process_name)
+    else:
+        bot.send_message(user_id, "Вы не зарегистрированы.")
+
+def process_name(message):
+    user_id = message.chat.id
+    name = message.text
+
+    if len(name) > 1:
+        update_name(user_id, name)
+        bot.send_message(user_id, f"✅ Ваше имя обновлено на {name}.")
+    else:
+        bot.send_message(user_id, "❌ Некорректное имя. Попробуйте снова.")
+
+# Команда /all_users – для админа, просмотр всех пользователей
+@bot.message_handler(commands=['all_users'])
+def all_users(message):
+    if message.chat.id != ADMIN_ID:
+        bot.send_message(message.chat.id, "❌ У вас нет доступа к этой команде.")
+        return
+
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id, name, phone, email FROM users")
+    users = cursor.fetchall()
+    conn.close()
+
+    if users:
+        response = "📋 Список пользователей:\n"
+        for user in users:
+            user_id, name, phone, email = user
+            email_text = email if email else "Не указан"
+            response += f"🆔 {user_id} | 👤 {name} | 📞 {phone} | 📧 {email_text}\n"
+        bot.send_message(ADMIN_ID, response)
+    else:
+        bot.send_message(ADMIN_ID, "❌ В базе нет пользователей.")
+
+# Команда /help – описание команд
+@bot.message_handler(commands=['help'])
+def help_command(message):
+    bot.send_message(message.chat.id, "📌 Доступные команды:\n"
+                                      "/profile - Просмотр профиля\n"
+                                      "/set_phone - Изменить номер телефона\n"
+                                      "/set_email - Установить email\n"
+                                      "/set_name - Изменить имя\n"
+                                      "/help - Список команд")
+
+bot.polling(none_stop=True)
+
